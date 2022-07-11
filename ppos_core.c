@@ -12,6 +12,7 @@
 //#define DEBUG
 
 #define STACKSIZE 1024 * 64
+#define SCHED_PRIO_ALPHA -1
 
 enum task_status {
   TASK_READY = 0x0,
@@ -28,10 +29,8 @@ queue_t *task_queue = NULL;
 int user_tasks = 0;
 
 void *print_task_queue_aux(queue_t *q) {
-  if (!q)
-    printf("empty");
-  else
-    printf("%d", ((task_t *)q)->id);
+  task_t* t = (task_t *)q;
+  printf("%3d:%-4lld", t->id, t->prio_din);
 
   return NULL;
 }
@@ -42,7 +41,21 @@ task_t *scheduler() {
               (void (*)(void *))print_task_queue_aux);
 #endif
 
-  return (task_t*) task_queue;
+  task_t *curr = (task_t*)task_queue;
+  curr->prio_din += SCHED_PRIO_ALPHA;
+  task_t* chosen = curr;
+
+  while((curr = curr->prev) != (task_t*) task_queue) {
+    curr->prio_din += SCHED_PRIO_ALPHA;
+    if (chosen->prio_din > curr->prio_din) {
+      chosen = curr;
+    }
+  }
+
+
+  chosen->prio_din = chosen->prio_est;
+
+  return (task_t *)chosen;
 }
 
 void dispatcher(void *nothing) {
@@ -51,23 +64,25 @@ void dispatcher(void *nothing) {
 #endif
 
   while (user_tasks > 0) {
-    task_t *proxima = scheduler();
-    if (proxima) {
+    task_t *chosen_task = scheduler();
+    if (chosen_task) {
 
 #ifdef DEBUG
-      printf("[i] DEBUG scheduler found task id %d\n", proxima->id);
+      printf("[i] DEBUG scheduler found task id %d\n", chosen_task->id);
 #endif
 
-      task_switch(proxima);
+      // Execute task.
+      task_switch(chosen_task);
+      // Task yielded/exitted.
 
-      switch (proxima->status) {
+      switch (chosen_task->status) {
       case TASK_READY:
         task_queue = task_queue->next;
         break;
       case TASK_TERMINATED:
-        queue_remove((queue_t **)&task_queue, (queue_t *)proxima);
+        queue_remove((queue_t **)&task_queue, (queue_t *)chosen_task);
         user_tasks--;
-        free(proxima->context.uc_stack.ss_sp);
+        free(chosen_task->context.uc_stack.ss_sp);
         break;
       case TASK_SUSPENDED:
         // ??? TODO
@@ -174,3 +189,23 @@ void task_yield() {
   current_task->status = TASK_READY;
   task_switch(&dispatcher_task);
 }
+
+void task_setprio(task_t *task, int prio) {
+  if (!task) {
+    task = current_task;
+  }
+
+#ifdef DEBUG
+  printf("[i] DEBUG changing prio task id %d from %lld to %d\n", task->id, task->prio_est, prio);
+#endif
+
+  task->prio_est = prio;
+}
+
+int task_getprio(task_t *task) {
+  if (!task)
+    task = current_task;
+
+  return task->prio_est;
+}
+
