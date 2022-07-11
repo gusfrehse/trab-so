@@ -200,6 +200,7 @@ void task_setprio(task_t *task, int prio) {
 #endif
 
   task->prio_est = prio;
+  task->prio_din = prio;
 }
 
 int task_getprio(task_t *task) {
