@@ -16,6 +16,8 @@ typedef struct task_t {
   ucontext_t context;         // contexto armazenado da tarefa
   short status;               // pronta, rodando, suspensa, ...
   short preemptable;          // pode ser preemptada?
+  short quantum;
+  short system_task;
   short prio_est;             // prioridade estatica [-20; 20] 
   long long prio_din;         // prioridade din
   // ... (outros campos serão adicionados mais tarde)
