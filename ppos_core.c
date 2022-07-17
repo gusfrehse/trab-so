@@ -79,7 +79,7 @@ void ppos_init() {
   }
 
   // activate timer for preemption
-  preemption_timer.it_value.tv_usec = 1;
+  preemption_timer.it_value.tv_usec = 1000;
   preemption_timer.it_value.tv_sec  = 0;
   preemption_timer.it_interval.tv_usec = 1000;
   preemption_timer.it_interval.tv_usec = 1000;
@@ -119,7 +119,7 @@ int task_create(task_t *task, void (*start_func)(void *), void *arg) {
   task->next = task->prev = NULL;
   task->id = next_id++;
   task->status = TASK_READY;
-  task->preemptable = 0;
+  task->preemptable = 1;
   task->system_task = 0;
 
 #ifdef DEBUG
@@ -201,7 +201,7 @@ task_t *scheduler() {
 
   while ((curr = curr->prev) != (task_t *)task_queue) {
     curr->prio_din += SCHED_PRIO_ALPHA;
-    if (chosen->prio_din >= curr->prio_din) {
+    if (chosen->prio_din > curr->prio_din) {
       chosen = curr;
     }
   }
