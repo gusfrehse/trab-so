@@ -53,11 +53,13 @@ void ppos_init() {
   getcontext(&(main_task.context));
   main_task.next = main_task.prev = NULL;
   main_task.id = next_id++;
-  main_task.system_task = 1;
-  main_task.preemptable = 0;
+  main_task.system_task = 0;
+  main_task.preemptable = 1;
   main_task.cpu_time = 0;
   main_task.start_time = systime();
   main_task.activations = 0;
+  queue_append((queue_t**)&task_queue, (queue_t*)&main_task);
+  user_tasks++;
 
   current_task = &main_task;
 
