@@ -31,12 +31,15 @@ task_t *current_task;
 queue_t *task_queue = NULL;
 int user_tasks = 0;
 
+unsigned int current_time = 0;
+
 struct sigaction preemption_action;
-struct itimerval preemption_timer = { 0 };
+struct itimerval preemption_timer = {0};
 
 task_t *scheduler();
 void dispatcher();
 void tick(int signum);
+static void print_stats();
 
 void *print_task_queue_aux(queue_t *q) {
   task_t *t = (task_t *)q;
@@ -52,7 +55,10 @@ void ppos_init() {
   main_task.id = next_id++;
   main_task.system_task = 1;
   main_task.preemptable = 0;
-  
+  main_task.cpu_time = 0;
+  main_task.start_time = systime();
+  main_task.activations = 0;
+
   current_task = &main_task;
 
   // printf magic
@@ -64,6 +70,9 @@ void ppos_init() {
   user_tasks = 0; // reset because dispatcher is not a 'user task'.
   dispatcher_task.system_task = 1;
   dispatcher_task.preemptable = 0;
+  dispatcher_task.cpu_time = 0;
+  dispatcher_task.start_time = systime();
+  dispatcher_task.activations = 0;
 
   // create signal handler for task preemption
   preemption_action.sa_handler = tick;
@@ -80,9 +89,9 @@ void ppos_init() {
 
   // activate timer for preemption
   preemption_timer.it_value.tv_usec = 1000;
-  preemption_timer.it_value.tv_sec  = 0;
+  preemption_timer.it_value.tv_sec = 0;
   preemption_timer.it_interval.tv_usec = 1000;
-  preemption_timer.it_interval.tv_usec = 1000;
+  preemption_timer.it_interval.tv_sec = 0;
   if (setitimer(ITIMER_REAL, &preemption_timer, 0) < 0) {
 #ifdef DEBUG
     perror("setitimer: ");
@@ -121,6 +130,9 @@ int task_create(task_t *task, void (*start_func)(void *), void *arg) {
   task->status = TASK_READY;
   task->preemptable = 1;
   task->system_task = 0;
+  task->cpu_time = 0;
+  task->start_time = systime();
+  task->activations = 0;
 
 #ifdef DEBUG
   printf("[i] DEBUG created thread id: %d\n", task->id);
@@ -138,6 +150,8 @@ int task_switch(task_t *task) {
          task->id);
 #endif
 
+  task->activations++;
+
   task_t *old_task = current_task;
   current_task = task;
   swapcontext(&old_task->context, &current_task->context);
@@ -150,6 +164,8 @@ void task_exit(int exit_code) {
   printf("[i] DEBUG exiting task id %d with exit code %d\n", current_task->id,
          exit_code);
 #endif
+
+  print_stats();
 
   task_t *old_task = current_task;
   current_task = &dispatcher_task;
@@ -199,6 +215,7 @@ task_t *scheduler() {
   curr->prio_din += SCHED_PRIO_ALPHA;
   task_t *chosen = curr;
 
+  // Search for the highest priority task while 'aging' the other tasks.
   while ((curr = curr->prev) != (task_t *)task_queue) {
     curr->prio_din += SCHED_PRIO_ALPHA;
     if (chosen->prio_din > curr->prio_din) {
@@ -225,7 +242,10 @@ void dispatcher() {
 #endif
 
       // Execute task.
+      unsigned int time_started = systime();
       task_switch(chosen_task);
+      unsigned int time_ended = systime();
+      chosen_task->cpu_time += time_ended - time_started;
       // Task yielded/exitted.
 
       switch (chosen_task->status) {
@@ -249,15 +269,29 @@ void dispatcher() {
 #endif
   }
 
+
+  print_stats();
   task_switch(&main_task);
 }
 
 void tick(int signum) {
 #ifdef DEBUG
-    //printf("[i] DEBUG tick\n");
+  // printf("[i] DEBUG tick\n");
 #endif
+
+  current_time++;
+
   if (current_task->preemptable && !(current_task->quantum--)) {
     current_task->quantum = SCHED_QUANTUM;
     task_yield();
   }
+}
+
+unsigned int systime() { return current_time; }
+
+static void print_stats() {
+  printf("Task %5d exit: execution time %7d ms, processor time %7d ms, %7d "
+         "activations\n",
+         current_task->id, systime() - current_task->start_time,
+         current_task->cpu_time, current_task->activations);
 }

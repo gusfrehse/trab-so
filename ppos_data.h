@@ -20,6 +20,11 @@ typedef struct task_t {
   short system_task;
   short prio_est;             // prioridade estatica [-20; 20] 
   long long prio_din;         // prioridade din
+
+  // stats
+  unsigned int cpu_time;      // tempo de cpu
+  unsigned int start_time;    // tempo de inicio
+  unsigned int activations;   // ativacoes
   // ... (outros campos serão adicionados mais tarde)
 } task_t;
 
