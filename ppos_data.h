@@ -25,6 +25,10 @@ typedef struct task_t {
   unsigned int cpu_time;      // tempo de cpu
   unsigned int start_time;    // tempo de inicio
   unsigned int activations;   // ativacoes
+  
+  struct task_t *join_queue;
+
+  int join_return_code;
   // ... (outros campos serão adicionados mais tarde)
 } task_t;
 

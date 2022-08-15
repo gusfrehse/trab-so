@@ -28,7 +28,7 @@ task_t main_task;
 task_t dispatcher_task;
 task_t *current_task;
 
-queue_t *task_queue = NULL;
+task_t *task_queue = NULL;
 int user_tasks = 0;
 
 unsigned int current_time = 0;
@@ -58,7 +58,9 @@ void ppos_init() {
   main_task.cpu_time = 0;
   main_task.start_time = systime();
   main_task.activations = 0;
-  queue_append((queue_t**)&task_queue, (queue_t*)&main_task);
+  main_task.join_queue = NULL;
+  main_task.join_return_code = 0;
+  queue_append((queue_t **)&task_queue, (queue_t *)&main_task);
   user_tasks++;
 
   current_task = &main_task;
@@ -75,6 +77,8 @@ void ppos_init() {
   dispatcher_task.cpu_time = 0;
   dispatcher_task.start_time = systime();
   dispatcher_task.activations = 0;
+  dispatcher_task.join_queue = NULL;
+  dispatcher_task.join_return_code = 0;
 
   // create signal handler for task preemption
   preemption_action.sa_handler = tick;
@@ -135,6 +139,8 @@ int task_create(task_t *task, void (*start_func)(void *), void *arg) {
   task->cpu_time = 0;
   task->start_time = systime();
   task->activations = 0;
+  task->join_queue = NULL;
+  task->join_return_code = 0;
 
 #ifdef DEBUG
   printf("[i] DEBUG created thread id: %d\n", task->id);
@@ -168,6 +174,13 @@ void task_exit(int exit_code) {
 #endif
 
   print_stats();
+
+  // libera todas as tasks esperando a current
+  while (queue_size((queue_t *)current_task->join_queue) > 0) {
+    task_t *curr = current_task->join_queue;
+    curr->join_return_code = exit_code;
+    task_resume(curr, &current_task->join_queue);
+  }
 
   task_t *old_task = current_task;
   current_task = &dispatcher_task;
@@ -271,7 +284,6 @@ void dispatcher() {
 #endif
   }
 
-
   print_stats();
   task_switch(&main_task);
 }
@@ -296,4 +308,23 @@ static void print_stats() {
          "activations\n",
          current_task->id, systime() - current_task->start_time,
          current_task->cpu_time, current_task->activations);
+}
+
+void task_suspend(task_t **queue) {
+  queue_remove((queue_t **)&task_queue, (queue_t *)current_task);
+
+  queue_append((queue_t **)queue, (queue_t *)current_task);
+
+  task_yield();
+}
+
+void task_resume(task_t *task, task_t **queue) {
+  queue_remove((queue_t **)queue, (queue_t *)task);
+  queue_append((queue_t **)&task_queue, (queue_t *)task);
+}
+
+int task_join(task_t *task) {
+  task_suspend(&task->join_queue);
+
+  return current_task->join_return_code;
 }
