@@ -3,6 +3,7 @@
 #include "queue.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 
 int queue_size(queue_t *queue) {
   if (queue == NULL)
@@ -38,17 +39,20 @@ int queue_append(queue_t **queue, queue_t *elem) {
   if (!queue) {
     fprintf(stderr, "[-] ERROR  in '%s': queue does not exist.\n",
             __FUNCTION__);
+    exit(1);
     return 1;
   }
 
   if (!elem) {
     fprintf(stderr, "[-] ERROR  in '%s': elem does not exist.\n", __FUNCTION__);
+    exit(2);
     return 2;
   }
 
   if (elem->next || elem->prev) {
     fprintf(stderr, "[-] ERROR  in '%s': elem is already in a queue.\n",
             __FUNCTION__);
+    exit(3);
     return 3;
   }
 
@@ -74,16 +78,19 @@ int queue_remove(queue_t **queue, queue_t *elem) {
   if (!queue) {
     fprintf(stderr, "[-] ERROR  in '%s': queue does not exist.\n",
             __FUNCTION__);
+    exit(1);
     return 1;
   }
 
   if (!elem) {
     fprintf(stderr, "[-] ERROR  in '%s': elem does not exist.\n", __FUNCTION__);
+    exit(2);
     return 2;
   }
 
   if (!*queue) {
     fprintf(stderr, "[-] ERROR  in '%s': queue is empty.\n", __FUNCTION__);
+    exit(3);
     return 3;
   }
 
@@ -93,6 +100,7 @@ int queue_remove(queue_t **queue, queue_t *elem) {
     if (curr == *queue) {
       fprintf(stderr, "[-] ERROR  in '%s': elem is not in queue.\n",
               __FUNCTION__);
+      exit(4);
       return 4;
     }
     curr = curr->next;

@@ -31,6 +31,8 @@ task_t *current_task;
 task_t *task_queue = NULL;
 int user_tasks = 0;
 
+task_t *sleep_queue = NULL;
+
 unsigned int current_time = 0;
 
 struct sigaction preemption_action;
@@ -43,7 +45,7 @@ static void print_stats();
 
 void *print_task_queue_aux(queue_t *q) {
   task_t *t = (task_t *)q;
-  printf("%3d:%-4lld", t->id, t->prio_din);
+  printf("%3d:%-4u", t->id, t->wake_up_time);
 
   return NULL;
 }
@@ -60,6 +62,7 @@ void ppos_init() {
   main_task.activations = 0;
   main_task.join_queue = NULL;
   main_task.join_return_code = 0;
+  main_task.wake_up_time = 0;
   queue_append((queue_t **)&task_queue, (queue_t *)&main_task);
   user_tasks++;
 
@@ -71,7 +74,7 @@ void ppos_init() {
   // creating dispatcher task
   task_create(&dispatcher_task, dispatcher, NULL);
   queue_remove((queue_t **)&task_queue, (queue_t *)&dispatcher_task);
-  user_tasks = 0; // reset because dispatcher is not a 'user task'.
+  user_tasks--; // reset because dispatcher is not a 'user task'.
   dispatcher_task.system_task = 1;
   dispatcher_task.preemptable = 0;
   dispatcher_task.cpu_time = 0;
@@ -79,6 +82,7 @@ void ppos_init() {
   dispatcher_task.activations = 0;
   dispatcher_task.join_queue = NULL;
   dispatcher_task.join_return_code = 0;
+  dispatcher_task.wake_up_time = 0;
 
   // create signal handler for task preemption
   preemption_action.sa_handler = tick;
@@ -141,6 +145,7 @@ int task_create(task_t *task, void (*start_func)(void *), void *arg) {
   task->activations = 0;
   task->join_queue = NULL;
   task->join_return_code = 0;
+  task->wake_up_time = 0;
 
 #ifdef DEBUG
   printf("[i] DEBUG created thread id: %d\n", task->id);
@@ -195,7 +200,6 @@ void task_yield() {
 #ifdef DEBUG
   printf("[i] DEBUG task id %d yielded\n", current_task->id);
 #endif
-  current_task->status = TASK_READY;
   task_switch(&dispatcher_task);
 }
 
@@ -226,6 +230,9 @@ task_t *scheduler() {
               (void (*)(void *))print_task_queue_aux);
 #endif
 
+  if (!task_queue)
+    return NULL;
+
   task_t *curr = (task_t *)task_queue;
   curr->prio_din += SCHED_PRIO_ALPHA;
   task_t *chosen = curr;
@@ -243,13 +250,36 @@ task_t *scheduler() {
   return (task_t *)chosen;
 }
 
+static void wake_up_tasks() {
+  task_t *curr = sleep_queue;
+  task_t *next;
+
+  if (!curr)
+    return;
+
+  do {
+    next = curr->next;
+
+    // checa se curr precisa acordar
+    if (curr->wake_up_time <= systime()) {
+      task_resume(curr, &sleep_queue);
+    }
+  } while ((curr = next) != sleep_queue && sleep_queue);
+}
+
 void dispatcher() {
 #ifdef DEBUG
   printf("[i] DEBUG scheduler started\n");
 #endif
+  unsigned int dispatcher_start_time = systime();
+  unsigned int dispatcher_acc_negative_time = 0;
 
   while (user_tasks > 0) {
+
+    wake_up_tasks();
+
     task_t *chosen_task = scheduler();
+
     if (chosen_task) {
 
 #ifdef DEBUG
@@ -258,9 +288,12 @@ void dispatcher() {
 
       // Execute task.
       unsigned int time_started = systime();
+
       task_switch(chosen_task);
-      unsigned int time_ended = systime();
-      chosen_task->cpu_time += time_ended - time_started;
+
+      unsigned int time_spent = systime() - time_started;
+      chosen_task->cpu_time += time_spent;
+      dispatcher_acc_negative_time += time_spent;
       // Task yielded/exitted.
 
       switch (chosen_task->status) {
@@ -273,16 +306,13 @@ void dispatcher() {
         free(chosen_task->context.uc_stack.ss_sp);
         break;
       case TASK_SUSPENDED:
-        // ??? TODO
+        // do nothing
         break;
       }
     }
-#ifdef DEBUG
-    else {
-      printf("[i] DEBUG scheduler found no new task\n");
-    }
-#endif
   }
+
+  dispatcher_task.cpu_time = systime() - dispatcher_start_time - dispatcher_acc_negative_time;
 
   print_stats();
   task_switch(&main_task);
@@ -311,6 +341,8 @@ static void print_stats() {
 }
 
 void task_suspend(task_t **queue) {
+  current_task->status = TASK_SUSPENDED;
+
   queue_remove((queue_t **)&task_queue, (queue_t *)current_task);
 
   queue_append((queue_t **)queue, (queue_t *)current_task);
@@ -319,12 +351,23 @@ void task_suspend(task_t **queue) {
 }
 
 void task_resume(task_t *task, task_t **queue) {
+  current_task->status = TASK_READY;
   queue_remove((queue_t **)queue, (queue_t *)task);
   queue_append((queue_t **)&task_queue, (queue_t *)task);
 }
 
 int task_join(task_t *task) {
-  task_suspend(&task->join_queue);
+  if (!task)
+    return -1;
+
+  if (task->status != TASK_TERMINATED)
+    task_suspend(&task->join_queue);
 
   return current_task->join_return_code;
+}
+
+void task_sleep(int t) {
+  current_task->wake_up_time = systime() + t;
+
+  task_suspend(&sleep_queue);
 }

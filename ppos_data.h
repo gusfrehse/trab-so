@@ -18,17 +18,19 @@ typedef struct task_t {
   short preemptable;          // pode ser preemptada?
   short quantum;
   short system_task;
-  short prio_est;             // prioridade estatica [-20; 20] 
-  long long prio_din;         // prioridade din
+  short prio_est;     // prioridade estatica [-20; 20]
+  long long prio_din; // prioridade din
 
   // stats
-  unsigned int cpu_time;      // tempo de cpu
-  unsigned int start_time;    // tempo de inicio
-  unsigned int activations;   // ativacoes
-  
+  unsigned int cpu_time;    // tempo de cpu
+  unsigned int start_time;  // tempo de inicio
+  unsigned int activations; // ativacoes
+
   struct task_t *join_queue;
 
   int join_return_code;
+
+  unsigned int wake_up_time; // tempo que a tarefa deve acordar
   // ... (outros campos serão adicionados mais tarde)
 } task_t;
 
