@@ -371,3 +371,66 @@ void task_sleep(int t) {
 
   task_suspend(&sleep_queue);
 }
+
+int sem_create(semaphore_t *s, int value) {
+  s->counter = value;
+  s->wait_queue = NULL;
+  s->lock = 0;
+
+  return 1;
+}
+
+int sem_down(semaphore_t *s) {
+  if (!s)
+    return -1;
+
+  // spinlock
+  while (__sync_fetch_and_or(&s->lock, 1)); // enter
+  printf("DOWN %d: counter %d\n", task_id(), s->counter);
+  s->counter--;
+
+  if (s->counter < 0) { // meio sus
+    printf("DOWN %d: will wait...\n", task_id());
+    s->lock = 0; // leave
+    task_suspend(&s->wait_queue);
+  } else {
+    printf("DOWN %d: will not wait!!!\n", task_id());
+    s->lock = 0; // leave
+    current_task->sem_return = 0;
+  }
+
+  return current_task->sem_return;
+}
+
+int sem_up(semaphore_t *s) {
+  if (!s || !s->wait_queue)
+    return -1;
+  
+  printf("UP %d: uppded\n", task_id());
+
+  // spinlock
+  while (__sync_fetch_and_or(&s->lock, 1)); // enter
+  s->counter++;
+
+  if (s->counter <= 0) {
+    printf("UP %d: releasing task %d\n", task_id(), s->wait_queue->id);
+    task_t *curr = s->wait_queue;
+    curr->sem_return = 0;
+    task_resume(curr, &s->wait_queue);
+  }
+
+  s->lock = 0; // leave
+
+  return 0;
+}
+
+int sem_destroy(semaphore_t *s) {
+
+  while (s->wait_queue) {
+    task_t *curr = s->wait_queue;
+    curr->sem_return = -1;
+    task_resume(curr, &s->wait_queue);
+  }
+
+  return 0;
+}

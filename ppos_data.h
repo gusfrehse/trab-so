@@ -31,12 +31,17 @@ typedef struct task_t {
   int join_return_code;
 
   unsigned int wake_up_time; // tempo que a tarefa deve acordar
+
+  int sem_return; // semaphore return code
   // ... (outros campos serão adicionados mais tarde)
 } task_t;
 
 // estrutura que define um semáforo
 typedef struct {
   // preencher quando necessário
+  task_t *wait_queue;    // fila de espera
+  int counter;
+  int lock;
 } semaphore_t;
 
 // estrutura que define um mutex
