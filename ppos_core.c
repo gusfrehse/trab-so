@@ -296,6 +296,10 @@ void dispatcher() {
       dispatcher_acc_negative_time += time_spent;
       // Task yielded/exitted.
 
+#ifdef DEBUG
+      printf("[i] DEBUG dispatcher received processor last task id %d with status %d\n", chosen_task->id, chosen_task->status);
+#endif
+
       switch (chosen_task->status) {
       case TASK_READY:
         task_queue = task_queue->next;
@@ -359,8 +363,8 @@ void task_suspend(task_t **queue) {
 void task_resume(task_t *task, task_t **queue) {
 #ifdef DEBUG
   printf("[i] DEBUG resuming task id %d on queue: \n", current_task->id);
-  //queue_print("", (queue_t *)task_queue,
-  //            (void (*)(void *))print_task_queue_aux);
+  queue_print("", (queue_t *)task_queue,
+              (void (*)(void *))print_task_queue_aux);
 #endif
   current_task->status = TASK_READY;
   queue_remove((queue_t **)queue, (queue_t *)task);
@@ -368,11 +372,18 @@ void task_resume(task_t *task, task_t **queue) {
 }
 
 int task_join(task_t *task) {
+#ifdef DEBUG
+  printf("[i] DEBUG join, task %d is waiting task id %d\n", current_task->id, task->id);
+#endif
   if (!task)
     return -1;
 
   if (task->status != TASK_TERMINATED)
     task_suspend(&task->join_queue);
+
+#ifdef DEBUG
+  printf("[i] DEBUG join, task %d is joined by task id %d\n", current_task->id, task->id);
+#endif
 
   return current_task->join_return_code;
 }
@@ -384,6 +395,9 @@ void task_sleep(int t) {
 }
 
 int sem_create(semaphore_t *s, int value) {
+#ifdef DEBUG
+  printf("[i] DEBUG creating semaphore with initial value %d\n", value);
+#endif
   s->counter = value;
   s->wait_queue = NULL;
   s->lock = 0;
@@ -392,19 +406,29 @@ int sem_create(semaphore_t *s, int value) {
 }
 
 int sem_down(semaphore_t *s) {
+#ifdef DEBUG
+  printf("[i] DEBUG downing semaphore with counter %d\n", s->counter);
+#endif
   if (!s)
     return -1;
 
   // spinlock
   while (__sync_fetch_and_or(&s->lock, 1))
     ; // enter
+
   // printf("DOWN %d: counter %d\n", task_id(), s->counter);
   s->counter--;
 
   if (s->counter < 0) {
     // printf("DOWN %d: will wait...\n", task_id());
+    //task_suspend(&s->wait_queue);
+
+    current_task->status = TASK_SUSPENDED;
+    queue_remove((queue_t **)&task_queue, (queue_t *)current_task);
+    queue_append((queue_t **)&s->wait_queue, (queue_t *)current_task);
     s->lock = 0; // leave
-    task_suspend(&s->wait_queue);
+    
+    task_switch(&dispatcher_task);
   } else {
     // printf("DOWN %d: will not wait!!!\n", task_id());
     s->lock = 0; // leave
@@ -415,6 +439,9 @@ int sem_down(semaphore_t *s) {
 }
 
 int sem_up(semaphore_t *s) {
+#ifdef DEBUG
+  printf("[i] DEBUG upping semaphore with counter %d\n", s->counter);
+#endif
   if (!s || !s->wait_queue)
     return -1;
 
