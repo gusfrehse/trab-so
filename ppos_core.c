@@ -35,6 +35,8 @@ task_t *sleep_queue = NULL;
 
 unsigned int current_time = 0;
 
+int preemption_lock = 0;
+
 struct sigaction preemption_action;
 struct itimerval preemption_timer = {0};
 
@@ -297,7 +299,7 @@ void dispatcher() {
       // Task yielded/exitted.
 
 #ifdef DEBUG
-      printf("[i] DEBUG dispatcher received processor last task id %d with status %d\n", chosen_task->id, chosen_task->status);
+      printf("[i] DEBUG dispatcher received processor, last task id %d with status %d\n", chosen_task->id, chosen_task->status);
 #endif
 
       switch (chosen_task->status) {
@@ -325,12 +327,29 @@ void dispatcher() {
 
 void tick(int signum) {
 #ifdef DEBUG
-  // printf("[i] DEBUG tick\n");
+   printf("[i] DEBUG tick\n");
 #endif
 
   current_time++;
+  if (preemption_lock) {
+#ifdef DEBUG
+     printf("[i] DEBUG tick preemption is locked\n");
+#endif
+    return;
+  }
 
-  if (current_task->preemptable && !(current_task->quantum--)) {
+  if (current_task->status == TASK_SUSPENDED) {
+#ifdef DEBUG
+     printf("[i] DEBUG tick preempting SUSpended task\n");
+#endif
+    return;
+  }
+
+
+  if (current_task->preemptable  && !(current_task->quantum--)) {
+#ifdef DEBUG
+     printf("[i] DEBUG tick preempting task id %d with status %d\n", current_task->id, current_task->status);
+#endif
     current_task->quantum = SCHED_QUANTUM;
     task_yield();
   }
@@ -363,8 +382,8 @@ void task_suspend(task_t **queue) {
 void task_resume(task_t *task, task_t **queue) {
 #ifdef DEBUG
   printf("[i] DEBUG resuming task id %d on queue: \n", current_task->id);
-  queue_print("", (queue_t *)task_queue,
-              (void (*)(void *))print_task_queue_aux);
+  //queue_print("", (queue_t *)*queue,
+  //            (void (*)(void *))print_task_queue_aux);
 #endif
   current_task->status = TASK_READY;
   queue_remove((queue_t **)queue, (queue_t *)task);
@@ -394,6 +413,26 @@ void task_sleep(int t) {
   task_suspend(&sleep_queue);
 }
 
+void enter_spinlock(int *lock) {
+#ifdef DEBUG
+  printf("DEBUG task id %d waiting for spinlock\n", task_id());
+#endif
+  while (__sync_fetch_and_or(lock, 1)); // enter
+#ifdef DEBUG
+  printf("task id %d got spinlock\n", task_id());
+#endif
+}
+
+void leave_spinlock(int *lock) {
+#ifdef DEBUG
+  printf("DEBUG task id %d is lefting spinlock\n", task_id());
+#endif
+    *lock = 0; // leave
+#ifdef DEBUG
+  printf("task id %d left spinlock\n", task_id());
+#endif
+}
+
 int sem_create(semaphore_t *s, int value) {
 #ifdef DEBUG
   printf("[i] DEBUG creating semaphore with initial value %d\n", value);
@@ -406,32 +445,52 @@ int sem_create(semaphore_t *s, int value) {
 }
 
 int sem_down(semaphore_t *s) {
+  preemption_lock = 1;
+
 #ifdef DEBUG
   printf("[i] DEBUG downing semaphore with counter %d\n", s->counter);
+  //queue_print("", (queue_t *)s->wait_queue,
+  //            (void (*)(void *))print_task_queue_aux);
 #endif
   if (!s)
     return -1;
 
   // spinlock
-  while (__sync_fetch_and_or(&s->lock, 1))
-    ; // enter
+  enter_spinlock(&s->lock);
 
-  // printf("DOWN %d: counter %d\n", task_id(), s->counter);
   s->counter--;
 
   if (s->counter < 0) {
-    // printf("DOWN %d: will wait...\n", task_id());
-    //task_suspend(&s->wait_queue);
+#ifdef DEBUG
+    printf("[i] DEBUG no space in semaphore, so task id %d will wait.\n", task_id());
+#endif
 
     current_task->status = TASK_SUSPENDED;
+
+#ifdef DEBUG
+    printf("sem down removing from task queue\n");
+#endif
+
     queue_remove((queue_t **)&task_queue, (queue_t *)current_task);
+
+#ifdef DEBUG
+    printf("sem down removed from task queue\n");
+    printf("sem down appending to sem queue\n");
+#endif
+
     queue_append((queue_t **)&s->wait_queue, (queue_t *)current_task);
-    s->lock = 0; // leave
+
+#ifdef DEBUG
+    printf("sem down appended to sem queue\n");
+#endif
+
+    leave_spinlock(&s->lock); // leave
+    preemption_lock = 0;
     
-    task_switch(&dispatcher_task);
+    task_yield();
   } else {
-    // printf("DOWN %d: will not wait!!!\n", task_id());
-    s->lock = 0; // leave
+    leave_spinlock(&s->lock); // leave
+    preemption_lock = 0;
     current_task->sem_return = 0;
   }
 
@@ -439,33 +498,53 @@ int sem_down(semaphore_t *s) {
 }
 
 int sem_up(semaphore_t *s) {
+  preemption_lock = 1;
 #ifdef DEBUG
   printf("[i] DEBUG upping semaphore with counter %d\n", s->counter);
 #endif
   if (!s || !s->wait_queue)
     return -1;
 
-  // printf("UP %d: uppded\n", task_id());
-
   // spinlock
-  while (__sync_fetch_and_or(&(s->lock), 1))
-    ; // enter
+  enter_spinlock(&s->lock);
+    
   s->counter++;
 
   if (s->counter <= 0) {
-    // printf("UP %d: releasing task %d\n", task_id(), s->wait_queue->id);
     task_t *curr = s->wait_queue;
     curr->sem_return = 0;
-    task_resume(curr, &s->wait_queue);
+    curr->status = TASK_READY;
+
+#ifdef DEBUG
+    printf("[i] DEBUG sem_up removing task id %d from sem queue\n", s->wait_queue->id);
+#endif
+
+    queue_remove((queue_t **)&s->wait_queue, (queue_t *)curr);
+
+#ifdef DEBUG
+    printf("[i] DEBUG sem_up removed it from sem queue\n");
+    printf("[i] DEBUG sem_up appending it to task queue\n");
+#endif
+
+    queue_append((queue_t **)&task_queue, (queue_t *)curr);
+
+#ifdef DEBUG
+    printf("[i] DEBUG sem_up appended it to task queue\n");
+#endif
+
+    //queue_print("now task_queue is ", (queue_t*)task_queue, (void (*)(void *))print_task_queue_aux);
   }
 
-  s->lock = 0; // leave
+  leave_spinlock(&s->lock); // leave
+  preemption_lock = 0;
 
   return 0;
 }
 
 int sem_destroy(semaphore_t *s) {
-  printf("destruindo s com counter: %d\n", s->counter);
+#ifdef DEBUG
+  printf("[i] DEBUG destroing semaphore with counter %d\n", s->counter);
+#endif
 
   while (s->wait_queue) {
     task_t *curr = s->wait_queue;

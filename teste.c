@@ -22,8 +22,12 @@ void taskBody(void *id)
 
   for (i=0; i< NUMSTEPS; i++)
   {
+    if (i % (NUMSTEPS / 100) == 0)
+      printf("task id %d current i %d\n", task_id(), i);
+
     // incrementa contador (seção crítica)
     sem_down (&s) ;
+    //printf("work %d\n", i);
     soma += 1 ;
     sem_up (&s) ;
   }
