@@ -296,7 +296,7 @@ void dispatcher() {
 #ifdef DEBUG
       printf("[i] DEBUG scheduler found task id %d\n", chosen_task->id);
 #endif
-      chosen_task->quantum = SCHED_QUANTUM;
+  chosen_task->quantum = SCHED_QUANTUM;
 
       // Execute task.
       unsigned int time_started = systime();
@@ -392,8 +392,6 @@ void task_suspend(task_t **queue) {
 void task_resume(task_t *task, task_t **queue) {
 #ifdef DEBUG
   printf("[i] DEBUG resuming task id %d on queue: \n", current_task->id);
-  //queue_print("", (queue_t *)*queue,
-  //            (void (*)(void *))print_task_queue_aux);
 #endif
   current_task->status = TASK_READY;
   queue_remove((queue_t **)queue, (queue_t *)task);
@@ -463,7 +461,6 @@ int sem_down(semaphore_t *s) {
 
   s->counter--;
 
-
   if (s->counter < 0) {
 #ifdef DEBUG
     printf("[i] DEBUG   semaphore full, task id %d will wait \n", current_task->id);
@@ -488,14 +485,12 @@ int sem_up(semaphore_t *s) {
   printf("[i] DEBUG upping semaphore with counter %d\n", s->counter);
 #endif
 
-  task_t *fst = NULL;
-
   enter_spinlock(&(s->lock));
 
   s->counter++;
 
   if (s->counter <= 0) {
-    fst = s->wait_queue;
+    task_t* fst = s->wait_queue;
     fst->status = TASK_READY;
     fst->sem_return = 0;
 
