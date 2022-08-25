@@ -15,6 +15,11 @@ task_t task[NUMTASKS] ;
 semaphore_t  s ;
 long int soma = 0 ;
 
+int dumb_lock = 0;
+
+void enter_spinlock(int *lock);
+void leave_spinlock(int *lock);
+
 // corpo das tarefas
 void taskBody(void *id)
 {
@@ -22,13 +27,15 @@ void taskBody(void *id)
 
   for (i=0; i< NUMSTEPS; i++)
   {
-    if (i % (NUMSTEPS / 100) == 0)
-      printf("task id %d current i %d\n", task_id(), i);
 
     // incrementa contador (seção crítica)
     sem_down (&s) ;
+    //enter_spinlock(&dumb_lock);
     //printf("work %d\n", i);
     soma += 1 ;
+    if (i % (NUMSTEPS / 100) == 0)
+      printf("task id %d current i %d\n", task_id(), i);
+    //leave_spinlock(&dumb_lock);
     sem_up (&s) ;
   }
 
