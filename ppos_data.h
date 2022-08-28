@@ -8,6 +8,7 @@
 #define __PPOS_DATA__
 
 #include <ucontext.h> // biblioteca POSIX de trocas de contexto
+#include <stddef.h>
 
 // Estrutura que define um Task Control Block (TCB)
 typedef struct task_t {
@@ -56,7 +57,19 @@ typedef struct {
 
 // estrutura que define uma fila de mensagens
 typedef struct {
-  // preencher quando necessário
+  void *buffer;
+
+  semaphore_t s_item;
+  semaphore_t s_vaga;
+  semaphore_t s_buff;
+
+  ptrdiff_t write_pos;
+  ptrdiff_t read_pos;
+
+  size_t num_msgs;
+  size_t buffer_capacity;
+  size_t datatype_size;
+
 } mqueue_t;
 
 #endif

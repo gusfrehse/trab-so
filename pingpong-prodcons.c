@@ -45,20 +45,15 @@ void produtor() {
 
     int item = rand() % 100;
 
-    sem_up(&s_item);
-
-
     sem_down(&s_vaga);
 
-
-
     sem_down(&s_buffer);
-
 
     insert(item);
 
     sem_up(&s_buffer);
 
+    sem_up(&s_item);
 
     printf("task id %d prod: produziu %d\n", task_id(), item);
   }
